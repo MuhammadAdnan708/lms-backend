@@ -1,0 +1,1 @@
+const Stripe = require('stripe'); echo const stripe = Stripe(process.env.STRIPE_SECRET_KEY); echo. echo exports.createPaymentIntent = async (req, res) = echo   try { echo     const { amount, courseId, courseTitle } = req.body; echo. echo     if (!amount 
