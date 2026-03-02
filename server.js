@@ -17,14 +17,19 @@ const videoRoutes = require('./routes/videoRoutes');
 
 const app = express();
 
-// Connect Database
+// Connect Database with better handling for serverless
 connectDB();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.CLIENT_URL || '*', // Replace * with your frontend URL in production
+  credentials: true
+}));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded files
+// Serve uploaded files (Note: This won't persist on Vercel)
+// Consider using cloud storage for production
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API Routes
@@ -38,27 +43,70 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/upload', videoRoutes);
 
-// Seed Categories (Optional - safer for production)
-if (process.env.NODE_ENV !== "production") {
-  const seedCategories = require('./controllers/categoryController');
-  seedCategories.seedCategories();
+// Seed Categories - Better handling for production
+if (process.env.NODE_ENV !== "production" && process.env.SEED_DB === 'true') {
+  try {
+    const seedCategories = require('./controllers/categoryController');
+    seedCategories.seedCategories();
+  } catch (error) {
+    console.log('Seeding skipped or failed:', error.message);
+  }
 }
 
-// Health Check
+// Health Check Route
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ 
+    status: 'ok', 
+    message: 'Server is running',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Test Route
+// Test Courses Route (with error handling)
 app.get('/api/test-courses', async (req, res) => {
   try {
     const Course = require('./models/Course');
-    const courses = await Course.find().limit(5);
-    res.json({ count: courses.length, courses });
+    const courses = await Course.find().limit(5).lean();
+    res.json({ 
+      success: true, 
+      count: courses.length, 
+      courses 
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Test courses error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
   }
 });
 
-// IMPORTANT: Export app for Vercel (No app.listen here)
+// 404 Handler for undefined routes
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    success: false, 
+    message: 'Route not found' 
+  });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Server error:', err.stack);
+  res.status(500).json({ 
+    success: false, 
+    message: 'Internal server error',
+    error: process.env.NODE_ENV === 'production' ? {} : err.message
+  });
+});
+
+// IMPORTANT: Export app for Vercel
 module.exports = app;
+
+// For local development only
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  });
+}
